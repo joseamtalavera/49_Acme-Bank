@@ -4,6 +4,7 @@ const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
 const helmet = require("helmet");
+const { body } = require("express-validator"); // for validating the input
 
 const db = new sqlite3.Database("./bank_sample.db");
 
@@ -18,7 +19,7 @@ app.use(
     resave: true,
     saveUninitialized: true,
     cookie: { 
-      secure: true, // this will enforce the use of HTTPS
+      secure: false, // this will enforce the use of HTTPS
       httpOnly: true, // this will prevent JavaScript from accessing the cookie
      },
   })
@@ -165,18 +166,32 @@ app.get("/public_forum", function (request, response) {
   } else {
     response.redirect("/");
   }
-  //response.end();
 });
 
+// we validate req.body.comment to prevent XSS using body() method
 app.post("/public_forum", function (request, response) {
+  body('comment')
+    .trim()
+    .escape()
+    .isLength({ min: 1 })
+    .withMessage('Comment must not be empty');
+  
+  const errors = validationResult(request);
+  if (!errors.isEmpty()) {
+    return response.status(422).json({ errors: errors.array() });
+  }
+  
   if (request.session.loggedin) {
     var comment = request.body.comment;
     var username = request.session.username;
     if (comment) {
-      db.all(
-        `INSERT INTO public_forum (username,message) VALUES ('${username}','${comment}')`,
-        (err, rows) => {
-          console.log(err);
+      db.run(
+        `INSERT INTO public_forum (username,message) VALUES ('?','?')`,
+        {username, comment},
+        (err) => {
+          if (err){
+            console.log(err);
+          }
         }
       );
       db.all(`SELECT username,message FROM public_forum`, (err, rows) => {
@@ -196,7 +211,6 @@ app.post("/public_forum", function (request, response) {
     response.redirect("/");
   }
   comment = "";
-  //response.end();
 });
 
 //SQL UNION INJECTION
